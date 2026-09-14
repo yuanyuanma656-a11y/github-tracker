@@ -1,4 +1,3 @@
-
 from datetime import datetime, timedelta, timezone
 
 import requests
@@ -53,6 +52,21 @@ class GitHubFetcher:
 
         except requests.exceptions.ConnectionError:
             raise RuntimeError("无法连接 GitHub，请检查网络连接。")
+
+    def get_repository_data(self, repo_name: str) -> dict:
+        """获取仓库需要保存的数据。"""
+        repo = self.get_repository(repo_name)
+
+        return {
+            "full_name": repo["full_name"],
+            "name": repo["name"],
+            "description": repo["description"],
+            "stargazers_count": repo["stargazers_count"],
+            "forks_count": repo["forks_count"],
+            "open_issues_count": repo["open_issues_count"],
+            "created_at": repo["created_at"],
+            "updated_at": repo["updated_at"],
+        }
 
     def get_recent_commits(
         self,
@@ -134,4 +148,3 @@ if __name__ == "__main__":
     commits = fetcher.get_recent_commits("psf/requests")
 
     print("最近30天 Commit 数量:", len(commits))
-
