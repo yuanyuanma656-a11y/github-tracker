@@ -3,7 +3,6 @@ from datetime import date
 from pathlib import Path
 
 from config import DATABASE_PATH
-from fetcher import GitHubFetcher
 
 
 class Database:
@@ -12,10 +11,11 @@ class Database:
     def __init__(self, db_path: Path = DATABASE_PATH) -> None:
         self.db_path = db_path
 
-        # 确保 data 文件夹存在
-        self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        self.db_path.parent.mkdir(
+            parents=True,
+            exist_ok=True,
+        )
 
-        # 创建数据库表
         self._create_tables()
 
     def _connect(self) -> sqlite3.Connection:
@@ -24,6 +24,7 @@ class Database:
 
     def _create_tables(self) -> None:
         """创建数据库表。"""
+
         with self._connect() as conn:
             conn.execute(
                 """
@@ -52,7 +53,9 @@ class Database:
                     open_issues INTEGER DEFAULT 0,
                     commit_count INTEGER DEFAULT 0,
                     contributor_count INTEGER DEFAULT 0,
+
                     UNIQUE(repository_id, stat_date),
+
                     FOREIGN KEY(repository_id)
                         REFERENCES repositories(id)
                 )
@@ -61,8 +64,9 @@ class Database:
 
     def save_repository(self, repo: dict) -> int:
         """保存或更新仓库信息。"""
+
         with self._connect() as conn:
-            cursor = conn.execute(
+            conn.execute(
                 """
                 INSERT INTO repositories (
                     full_name,
@@ -75,6 +79,7 @@ class Database:
                     updated_at
                 )
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+
                 ON CONFLICT(full_name) DO UPDATE SET
                     name = excluded.name,
                     description = excluded.description,
@@ -95,15 +100,23 @@ class Database:
                 ),
             )
 
-            if cursor.lastrowid:
-                return cursor.lastrowid
-
             cursor = conn.execute(
-                "SELECT id FROM repositories WHERE full_name = ?",
+                """
+                SELECT id
+                FROM repositories
+                WHERE full_name = ?
+                """,
                 (repo["full_name"],),
             )
 
-            return cursor.fetchone()[0]
+            row = cursor.fetchone()
+
+            if row is None:
+                raise RuntimeError(
+                    "保存仓库后无法获取数据库 ID。"
+                )
+
+            return row[0]
 
     def save_daily_stats(
         self,
@@ -113,9 +126,12 @@ class Database:
         open_issues: int,
         commit_count: int,
         contributor_count: int,
+        stat_date: str | None = None,
     ) -> None:
-        """保存当天的仓库统计数据。"""
-        today = date.today().isoformat()
+        """保存指定日期的统计数据。"""
+
+        if stat_date is None:
+            stat_date = date.today().isoformat()
 
         with self._connect() as conn:
             conn.execute(
@@ -130,7 +146,9 @@ class Database:
                     contributor_count
                 )
                 VALUES (?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(repository_id, stat_date) DO UPDATE SET
+
+                ON CONFLICT(repository_id, stat_date)
+                DO UPDATE SET
                     stars = excluded.stars,
                     forks = excluded.forks,
                     open_issues = excluded.open_issues,
@@ -139,7 +157,7 @@ class Database:
                 """,
                 (
                     repository_id,
-                    today,
+                    stat_date,
                     stars,
                     forks,
                     open_issues,
@@ -148,8 +166,12 @@ class Database:
                 ),
             )
 
-    def get_daily_stats(self, repository_id: int) -> list[tuple]:
+    def get_daily_stats(
+        self,
+        repository_id: int,
+    ) -> list[tuple]:
         """获取仓库的历史统计数据。"""
+
         with self._connect() as conn:
             cursor = conn.execute(
                 """
@@ -169,41 +191,48 @@ class Database:
 
             return cursor.fetchall()
 
+    def get_repositories(self) -> list[tuple]:
+        """获取所有已经追踪的仓库。"""
+
+        with self._connect() as conn:
+            cursor = conn.execute(
+                """
+                SELECT
+                    id,
+                    full_name
+                FROM repositories
+                ORDER BY id
+                """
+            )
+
+            return cursor.fetchall()
+
+    def get_repository_id(
+        self,
+        repo_name: str,
+    ) -> int | None:
+        """根据仓库名称获取数据库 ID。"""
+
+        with self._connect() as conn:
+            cursor = conn.execute(
+                """
+                SELECT id
+                FROM repositories
+                WHERE full_name = ?
+                """,
+                (repo_name,),
+            )
+
+            row = cursor.fetchone()
+
+            if row is None:
+                return None
+
+            return row[0]
+
 
 if __name__ == "__main__":
-    fetcher = GitHubFetcher()
     database = Database()
 
-    # 获取仓库基本信息
-    repo = fetcher.get_repository_data("psf/requests")
-
-    # 保存仓库
-    repository_id = database.save_repository(repo)
-
-    # 获取最近 30 天 Commit
-    commits = fetcher.get_recent_commits("psf/requests")
-
-    # 暂时使用 Commit 数量作为当天统计
-    commit_count = len(commits)
-
-    # 暂时使用 0 作为贡献者数量
-    contributor_count = 0
-
-    # 保存当天统计
-    database.save_daily_stats(
-        repository_id=repository_id,
-        stars=repo["stargazers_count"],
-        forks=repo["forks_count"],
-        open_issues=repo["open_issues_count"],
-        commit_count=commit_count,
-        contributor_count=contributor_count,
-    )
-
-    print("仓库保存成功！")
-    print("仓库：", repo["full_name"])
-    print("Stars：", repo["stargazers_count"])
-    print("Forks：", repo["forks_count"])
-    print("Open Issues：", repo["open_issues_count"])
-    print("最近30天 Commit：", commit_count)
-    print("数据库 ID：", repository_id)
-    print("今日统计数据保存成功！")
+    print("数据库初始化成功！")
+    print(f"数据库位置：{database.db_path}")

@@ -25,7 +25,7 @@ class GitHubFetcher:
         return headers
 
     def get_repository(self, repo_name: str) -> dict:
-        """获取 GitHub 仓库的基本信息。"""
+        """获取 GitHub 仓库基本信息。"""
         url = f"{self.base_url}/repos/{repo_name}"
 
         try:
@@ -36,7 +36,9 @@ class GitHubFetcher:
             )
 
             if response.status_code == 404:
-                raise ValueError(f"仓库不存在：{repo_name}")
+                raise ValueError(
+                    f"仓库不存在：{repo_name}"
+                )
 
             if response.status_code == 403:
                 raise RuntimeError(
@@ -48,12 +50,19 @@ class GitHubFetcher:
             return response.json()
 
         except requests.exceptions.Timeout:
-            raise RuntimeError("请求 GitHub 超时，请检查网络。")
+            raise RuntimeError(
+                "请求 GitHub 超时，请检查网络。"
+            )
 
         except requests.exceptions.ConnectionError:
-            raise RuntimeError("无法连接 GitHub，请检查网络连接。")
+            raise RuntimeError(
+                "无法连接 GitHub，请检查网络连接。"
+            )
 
-    def get_repository_data(self, repo_name: str) -> dict:
+    def get_repository_data(
+        self,
+        repo_name: str,
+    ) -> dict:
         """获取仓库需要保存的数据。"""
         repo = self.get_repository(repo_name)
 
@@ -100,7 +109,9 @@ class GitHubFetcher:
                 )
 
                 if response.status_code == 404:
-                    raise ValueError(f"仓库不存在：{repo_name}")
+                    raise ValueError(
+                        f"仓库不存在：{repo_name}"
+                    )
 
                 if response.status_code == 403:
                     raise RuntimeError(
@@ -133,18 +144,122 @@ class GitHubFetcher:
 
         return commits
 
+    def get_contributors(
+        self,
+        repo_name: str,
+    ) -> list[dict]:
+        """获取仓库贡献者。"""
+        url = (
+            f"{self.base_url}/repos/"
+            f"{repo_name}/contributors"
+        )
+
+        contributors: list[dict] = []
+        page = 1
+
+        while True:
+            params = {
+                "per_page": 100,
+                "page": page,
+            }
+
+            try:
+                response = requests.get(
+                    url,
+                    headers=self._get_headers(),
+                    params=params,
+                    timeout=10,
+                )
+
+                if response.status_code == 404:
+                    raise ValueError(
+                        f"仓库不存在：{repo_name}"
+                    )
+
+                if response.status_code == 403:
+                    raise RuntimeError(
+                        "GitHub API 请求受限，可能触发了速率限制。"
+                    )
+
+                response.raise_for_status()
+
+                page_contributors = response.json()
+
+                if not page_contributors:
+                    break
+
+                contributors.extend(
+                    page_contributors
+                )
+
+                if len(page_contributors) < 100:
+                    break
+
+                page += 1
+
+            except requests.exceptions.Timeout:
+                raise RuntimeError(
+                    "请求 GitHub 超时，请检查网络。"
+                )
+
+            except requests.exceptions.ConnectionError:
+                raise RuntimeError(
+                    "无法连接 GitHub，请检查网络连接。"
+                )
+
+        return contributors
+
 
 if __name__ == "__main__":
     fetcher = GitHubFetcher()
 
-    repo = fetcher.get_repository("psf/requests")
+    repo_name = "psf/requests"
 
-    print("项目名称:", repo["name"])
-    print("Stars:", repo["stargazers_count"])
-    print("Forks:", repo["forks_count"])
-    print("Open Issues:", repo["open_issues_count"])
-    print("Description:", repo["description"])
+    print("正在测试 GitHub API...")
 
-    commits = fetcher.get_recent_commits("psf/requests")
+    repo = fetcher.get_repository(
+        repo_name
+    )
 
-    print("最近30天 Commit 数量:", len(commits))
+    print(
+        "项目名称:",
+        repo["name"],
+    )
+
+    print(
+        "Stars:",
+        repo["stargazers_count"],
+    )
+
+    print(
+        "Forks:",
+        repo["forks_count"],
+    )
+
+    print(
+        "Open Issues:",
+        repo["open_issues_count"],
+    )
+
+    print(
+        "Description:",
+        repo["description"],
+    )
+
+    commits = fetcher.get_recent_commits(
+        repo_name
+    )
+
+    print(
+        "最近30天 Commit 数量:",
+        len(commits),
+    )
+
+    contributors = fetcher.get_contributors(
+        repo_name
+    )
+
+    print(
+        "贡献者数量:",
+        len(contributors),
+    )
